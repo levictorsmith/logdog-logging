@@ -47,6 +47,10 @@ incrementCode() {
     echo $(($1 + 1))
 }
 
+release() {
+    gradle uploadArchives
+}
+
 incrementVersion() {
     # Increment version name and code
     newVersionName=`incrementSemver $(getProperty "$PROPERTY_VERSION_NAME") "$1"`
@@ -59,6 +63,17 @@ incrementVersion() {
     git commit -m "Inc v$newVersionName" -- "$PROPERTIES_FILE_NAME"
     
     echo "Successfully incremented version"
+
+    # Release, if desired
+    printf "Do you want to release now? [Y,n] "
+    option=""
+    read option
+    if [[ $option = "n" ]]
+        then
+            echo "Exiting..."
+            exit
+    fi
+    release
 }
 
 option=""
