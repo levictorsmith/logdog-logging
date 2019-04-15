@@ -122,6 +122,12 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
     /**
      * Construct a table with the given collection of data.
      */
+    public fun <T : Any> table(data: Collection<T>, headers: List<String>? = null, showIndexes: Boolean = true) {
+        table("", data, headers, showIndexes) { listOf(it.toString()) }
+    }
+    public fun <T : Any> table(tag: String, data: Collection<T>, headers: List<String>? = null, showIndexes: Boolean = true) {
+        table(tag, data, headers, showIndexes) { listOf(it.toString()) }
+    }
     public fun <T : Any> table(
         tag: String,
         data: Collection<T>,
