@@ -1,0 +1,74 @@
+#!/bin/sh
+
+#############################################
+# Increment version in properties and commit
+#############################################
+PROPERTIES_FILE_NAME="./gradle.properties"
+PROPERTY_VERSION_NAME="VERSION_NAME"
+PROPERTY_VERSION_CODE="VERSION_CODE"
+
+getProperty() {
+    awk -F= -v key="$1" '$1==key {print $2}' "$PROPERTIES_FILE_NAME"
+}
+setProperty() {
+    awk -v pat="^$1=" -v value="$1=$2" '{ if ($0 ~ pat) print value; else print $0; }' $3 > $3.tmp
+    mv $3.tmp $3
+}
+
+incrementSemver() {
+    IFS='.' read -a version_parts <<< "$1"
+
+	major=${version_parts[0]}
+	minor=${version_parts[1]}
+    patch=${version_parts[2]}
+
+    case $2 in
+        major)
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+        minor)
+                minor=$((minor + 1))
+                patch=0
+                ;;
+        patch)
+                patch=$((patch + 1))
+                ;;
+        *)
+                echo "Something went wrong..."
+                exit 1
+                ;;
+    esac
+    echo "$major.$minor.$patch"
+}
+
+incrementCode() {
+    echo $(($1 + 1))
+}
+
+incrementVersion() {
+    # Increment version name and code
+    newVersionName=`incrementSemver $(getProperty "$PROPERTY_VERSION_NAME") "$1"`
+    newVersionCode=`incrementCode $(getProperty "$PROPERTY_VERSION_CODE")`
+    setProperty "$PROPERTY_VERSION_NAME" "$newVersionName" "$PROPERTIES_FILE_NAME"
+    setProperty "$PROPERTY_VERSION_CODE" "$newVersionCode" "$PROPERTIES_FILE_NAME"
+
+    # Add and commit
+    git add "$PROPERTIES_FILE_NAME"
+    git commit -m "\"Inc v$newVersionName\"" -- "$PROPERTIES_FILE_NAME"
+}
+
+option=""
+
+printf "Enter upgrade type [major, minor, patch]: "
+read option
+case $option in
+    major | minor | patch)
+            incrementVersion $option
+            ;;
+    *)
+            echo "Invalid option"
+            exit 1
+            ;;
+esac
