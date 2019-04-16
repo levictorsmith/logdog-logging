@@ -71,8 +71,8 @@ incrementVersion() {
 
     # Add and commit
     echo "Committing..."
-    git add "$FILE_PROPERTIES"
-    git commit -m "Inc v$newVersionName" -- "$FILE_PROPERTIES"
+    git add $FILE_PROPERTIES $FILE_README
+    git commit -m "Inc v$newVersionName" -- $FILE_PROPERTIES $FILE_README
     
     echo "Successfully incremented version"
 
