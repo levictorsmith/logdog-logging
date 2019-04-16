@@ -62,12 +62,15 @@ incrementVersion() {
     newVersionName=`incrementSemver $(getProperty "$PROPERTY_VERSION_NAME") "$1"`
     newVersionCode=`incrementCode $(getProperty "$PROPERTY_VERSION_CODE")`
     # Change in README
+    echo "Updating README..."
     updateReadme $newVersionName
 
+    echo "Updating properties..."
     setProperty "$PROPERTY_VERSION_NAME" "$newVersionName" "$FILE_PROPERTIES"
     setProperty "$PROPERTY_VERSION_CODE" "$newVersionCode" "$FILE_PROPERTIES"
 
     # Add and commit
+    echo "Committing..."
     git add "$FILE_PROPERTIES"
     git commit -m "Inc v$newVersionName" -- "$FILE_PROPERTIES"
     
