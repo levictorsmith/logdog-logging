@@ -10,14 +10,14 @@ These tools come equipped with useful capabilities like logging at different lev
 
 #### Gradle
 
-`implementation 'me.levansmith.logdog:logging:0.2.2'`
+`implementation 'me.levansmith.logdog:logging:0.3.0'`
 
 #### Maven
 ```
 <dependency>
     <groupId>me.levansmith.logdog</groupId>
     <artifactId>logdog</artifactId>
-    <version>0.2.2</version>
+    <version>0.3.0</version>
 </dependency>
 ```
 
