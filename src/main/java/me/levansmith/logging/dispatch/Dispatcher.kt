@@ -5,7 +5,7 @@ import me.levansmith.logging.LogProvider
 import java.io.Serializable
 import java.util.Collections.emptyList
 
-abstract class Dispatcher<M : Modifiers> {
+interface Dispatcher<M : Modifiers> {
 
     data class Delegate(
         var tag: String,
@@ -16,22 +16,32 @@ abstract class Dispatcher<M : Modifiers> {
         var args: List<Any> = emptyList()
     ) : Serializable
 
-    abstract fun withModifiers(level: LogProvider.Level?): M?
+    val modifiers: M?
 
-    abstract fun shouldDispatch(modifiers: M, delegate: Delegate): Boolean
+    val defaultLevel: LogProvider.Level
 
-    abstract fun preDispatch(modifiers: M, delegate: Delegate)
+    fun defaultModifiers(): M
 
-    abstract fun doDispatch(modifiers: M, delegate: Delegate): Int
+    fun shouldDispatch(modifiers: M, delegate: Delegate): Boolean
 
-    abstract fun postDispatch(modifiers: M, delegate: Delegate)
+    fun preDispatch(modifiers: M, delegate: Delegate)
+
+    fun doDispatch(modifiers: M, delegate: Delegate): Int
+
+    fun postDispatch(modifiers: M, delegate: Delegate)
 
     fun dispatch(level: LogProvider.Level?, delegate: Delegate): Int {
-        val modifiers = withModifiers(level)
-        if (!shouldDispatch(modifiers!!, delegate)) return 0
-        preDispatch(modifiers, delegate)
-        val result = doDispatch(modifiers, delegate)
-        postDispatch(modifiers, delegate)
+        val tempModifiers = modifiers
+            ?.apply {
+                logLevel = level ?: (modifiers?.logLevel) ?: defaultLevel
+            }
+            ?: defaultModifiers().apply {
+                logLevel = level ?: defaultLevel
+            }
+        if (!shouldDispatch(tempModifiers, delegate)) return 0
+        preDispatch(tempModifiers, delegate)
+        val result = doDispatch(tempModifiers, delegate)
+        postDispatch(tempModifiers, delegate)
         return result
     }
 }

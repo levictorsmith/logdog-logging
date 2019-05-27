@@ -3,6 +3,7 @@ package me.levansmith.logging
 import com.google.gson.*
 import kotlinx.coroutines.*
 import me.levansmith.logging.dispatch.Dispatcher
+import me.levansmith.logging.dispatch.Dispatcher.Delegate
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.StringWriter
@@ -15,10 +16,11 @@ import javax.xml.transform.stream.StreamResult
 import javax.xml.transform.stream.StreamSource
 import kotlin.math.max
 import me.levansmith.logging.dispatch.Modifiers
+import java.util.regex.Pattern
 
-abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvider) : Dispatcher<M>() {
+abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvider) : Dispatcher<M> {
 
-    internal companion object {
+    private companion object {
 
         private const val DEFAULT_LOG_EVENT_NAME = "log_event"
         private const val DEFAULT_COUNT_LABEL = "me.levansmith.logging.DispatchLogger.DEFAULT_COUNT_LABEL"
@@ -29,9 +31,18 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
         private val counters: MutableMap<String, Long> = mutableMapOf()
         private val timers: MutableMap<String, TimerParams> = mutableMapOf()
 
+        private val ANONYMOUS_CLASS = Pattern.compile("(\\$\\d+)+$")
     }
 
     protected abstract val className: String
+    private val ignoreClasses by lazy {
+        listOf(
+            className,
+            DispatchLogger::class.java.name,
+            Dispatcher::class.java.name,
+            "${Dispatcher::class.java.name}\$DefaultImpls"
+        )
+    }
 
     private data class TimerParams(
         val tag: String,
@@ -117,6 +128,9 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
         val timerParams = timers[label]!!
 
         dispatch(null, Delegate(timerParams.tag, formatMillis(System.currentTimeMillis() - timerParams.start, format)))
+    }
+    public fun timeGet(label: String): Long {
+        return System.currentTimeMillis() - timers[label]!!.start
     }
 
     /**
@@ -224,20 +238,20 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
         }
     }
 
-    private fun getAutoTag(): String {
-        // Walk up the stack trace until the callee is found, then get its classname
-        val className = DispatchLogger::class.java.name
-        // Only take the first 15 entries to save on time. We know the last call to anything logdog won't be more than 15 calls out
-        val trace = Thread.currentThread().stackTrace.take(15)
-        val index = trace.indexOfLast { it.className.contains(className) || it.className.contains(this.className) } + 1
-        return Thread.currentThread().stackTrace[index].className
-    }
+    // Walk up the stack trace until the callee is found, then get its classname
+    // Credit to Jake Wharton
+    private fun getAutoTag() = Throwable().stackTrace
+        .first { it.className.takeWhile { c -> c != '$' } !in ignoreClasses }.className
+        .substringAfterLast('.')
+        .let {
+            ANONYMOUS_CLASS.matcher(it).takeIf { m -> m.find() }?.replaceAll("") ?: it
+        }
 
     private fun format(format: String, vararg args: Any): String = String.format(Locale.getDefault(), format, *args)
 
-    private fun decorateMessage(modifiers: Modifiers, delegate: Delegate) = when {
+    private fun decorateMessage(modifiers: M, delegate: Delegate) = when {
         modifiers.showThreadInfo -> logThread(delegate.message)
-        delegate.format != null -> format(delegate.format!!, delegate.args.toTypedArray())
+        delegate.format != null -> format(delegate.format!!, *delegate.args.toTypedArray())
         else -> delegate.message
     }
 
@@ -293,6 +307,8 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
         showIndexes: Boolean = true,
         interpreter: (T) -> List<String>
     ) {
+        // Do this early on so it doesn't have to calculate it multiple times
+        val saveTag = getTag(tag)
         runBlocking(Dispatchers.Default) {
             val indexWidth = data.size.toString().length + 2 //2 spaces for padding
 
@@ -313,25 +329,24 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
 
             // Output top row
             val builder = StringBuilder()
-            dispatch(null, Delegate(tag, builder.outputRow("┏", "┳", "━", "┓", columnWidths).toString()))
+            dispatch(null, Delegate(saveTag, builder.outputRow("┏", "┳", "━", "┓", columnWidths).toString()))
             builder.clear()
 
             // Output headers row
             if (headers != null) {
                 val headersRow = buildRow(headers, columnWidths, showIndexes, indexWidth, null)
-//                val headersRow = getHeaderRow(headers, columnWidths, showIndexes, indexWidth)
-                dispatch(null, Delegate(tag, headersRow))
+                dispatch(null, Delegate(saveTag, headersRow))
                 val headerBottom = getHeaderBottomRow(columnWidths)
-                dispatch(null, Delegate(tag, headerBottom))
+                dispatch(null, Delegate(saveTag, headerBottom))
             }
 
             // Output data
             data.map { interpreter(it) }.forEachIndexed { index, it ->
                 val row = buildRow(it, columnWidths, showIndexes, indexWidth, index)
-                dispatch(null, Delegate(tag, row))
+                dispatch(null, Delegate(saveTag, row))
             }
             // Output bottom row
-            dispatch(null, Delegate(tag, buildString {
+            dispatch(null, Delegate(saveTag, buildString {
                 outputRow("┗", "┻", "━", "┛", columnWidths)
             }))
             return@runBlocking
@@ -342,15 +357,13 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
      JSON
      */
     private fun doJson(tag: String?, json: String) {
-
+        // Do this early on so it doesn't have to calculate it multiple times
+        val saveTag = getTag(tag ?: "")
         try {
-            val element = JsonParser().parse(json)
             val obj = JSONObject(json).toString(2)
             surroundWithBorder(splitByLine(obj)).forEach {
-                //                dispatch(options, tag ?: getTag(""), it)
-                dispatch(null, Delegate(tag ?: "", it))
+                dispatch(null, Delegate(saveTag, it))
             }
-
         } catch (e: JSONException) {
             log("Invalid JSON", e)
         }
@@ -360,6 +373,8 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
      XML
      */
     private fun doXml(tag: String, xml: String) {
+        // Do this early on so it doesn't have to calculate it multiple times
+        val saveTag = getTag(tag)
         try {
             val source = StreamSource(xml.reader())
             val result = StreamResult(StringWriter())
@@ -372,7 +387,7 @@ abstract class DispatchLogger<M : Modifiers>(private val logProvider: LogProvide
             lines.removeAt(lines.lastIndex - 1) // It always had an extra line at the end
             lines.forEach {
                 //                dispatch(options, tag, it)
-                dispatch(null, Delegate(tag, it))
+                dispatch(null, Delegate(saveTag, it))
             }
         } catch (e: TransformerException) {
             log("Invalid XML", e)
